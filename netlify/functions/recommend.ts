@@ -31,10 +31,10 @@ function getLLM() {
     throw new Error("ANTHROPIC_API_KEY environment variable not set")
   }
   return new ChatAnthropic({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-3-5-haiku-latest",
     temperature: 0.7,
     anthropicApiKey: apiKey,
-    maxTokens: 8192,
+    maxTokens: 4096,
   })
 }
 
@@ -58,38 +58,16 @@ async function getRecommendations(preferences: UserPreferences): Promise<MovieRe
   const llm = getLLM()
   const { mood, watchingWith, availableTime, recentlyEnjoyed } = preferences
 
-  const prompt = `You are a movie recommendation expert. Based on the user's preferences, recommend exactly 20 movies.
-
-USER PREFERENCES:
+  const prompt = `You are a movie expert. Recommend 10 movies based on:
 - Mood: ${mood}
-- Watching with: ${watchingWith}
-- Available time: ${availableTime} minutes
-${recentlyEnjoyed ? `- Recently enjoyed: ${recentlyEnjoyed}` : ""}
+- Watching with: ${watchingWith}  
+- Max runtime: ${availableTime} min
+${recentlyEnjoyed ? `- Liked: ${recentlyEnjoyed}` : ""}
 
-IMPORTANT REQUIREMENTS:
-1. Recommend exactly 20 movies that fit within the ${availableTime} minute time limit
-2. Each movie must have a valid IMDb ID (format: tt followed by 7-8 digits)
-3. Include a variety of movies - mix classics and recent films
-4. The "whyItFits" should be personal, explaining why this movie fits their ${mood} mood for ${watchingWith} viewing
-5. The "plot" should be a 1-2 sentence non-spoiler summary
-6. Include realistic streaming platforms where the movie might be available
+Return JSON array with 10 movies:
+[{"title":"...","year":2020,"runtime":100,"streamingPlatforms":["Netflix"],"rating":8.0,"genres":["Drama"],"whyItFits":"...","plot":"...","imdbId":"tt1234567"}]
 
-Return exactly 20 recommendations as a JSON array:
-[
-  {
-    "title": "Movie Title",
-    "year": 2023,
-    "runtime": 120,
-    "streamingPlatforms": ["Netflix", "Prime Video"],
-    "rating": 8.5,
-    "genres": ["Drama", "Comedy"],
-    "whyItFits": "Personal 1-2 sentence explanation",
-    "plot": "Brief 1-2 sentence plot summary without spoilers",
-    "imdbId": "tt1234567"
-  }
-]
-
-Only return valid JSON, no other text.`
+JSON only, no other text.`
 
   const response = await llm.invoke(prompt)
   const content = getResponseText(response.content)
