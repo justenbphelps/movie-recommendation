@@ -6,6 +6,10 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions.recommend]
+  # Extended timeout for LLM calls (max 26s on free tier)
+  timeout = 26
+
 # SPA fallback - redirect all routes to index.html
 [[redirects]]
   from = "/*"
