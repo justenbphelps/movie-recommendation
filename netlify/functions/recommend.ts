@@ -58,13 +58,13 @@ async function getRecommendations(preferences: UserPreferences): Promise<MovieRe
   const llm = getLLM()
   const { mood, watchingWith, availableTime, recentlyEnjoyed } = preferences
 
-  const prompt = `You are a movie expert. Recommend 10 movies based on:
+  const prompt = `You are a movie expert. Recommend 12 movies based on:
 - Mood: ${mood}
 - Watching with: ${watchingWith}  
 - Max runtime: ${availableTime} min
 ${recentlyEnjoyed ? `- Liked: ${recentlyEnjoyed}` : ""}
 
-Return JSON array with 10 movies:
+Return JSON array with 12 movies:
 [{"title":"...","year":2020,"runtime":100,"streamingPlatforms":["Netflix"],"rating":8.0,"genres":["Drama"],"whyItFits":"...","plot":"...","imdbId":"tt1234567"}]
 
 JSON only, no other text.`
