@@ -1,14 +1,57 @@
-import { StateGraph, Annotation, START, END } from "@langchain/langgraph/web"
+import type { Handler } from "@netlify/functions"
+import { StateGraph, Annotation, START, END } from "@langchain/langgraph"
 import { ChatAnthropic } from "@langchain/anthropic"
-import type {
-  UserPreferences,
-  MovieSearchResult,
-  MovieReview,
-  MovieRecommendation,
-  AgentStep,
-} from "@/types"
 
-// Define the state schema using Annotation
+// Types
+type Mood = "cozy" | "thrilling" | "funny" | "dramatic" | "romantic" | "thought-provoking"
+type WatchingWith = "solo" | "date" | "family" | "friends"
+
+interface UserPreferences {
+  mood: Mood
+  watchingWith: WatchingWith
+  availableTime: number
+  recentlyEnjoyed?: string
+}
+
+interface MovieRecommendation {
+  title: string
+  year: number
+  runtime: number
+  streamingPlatforms: string[]
+  rating: number
+  genres: string[]
+  whyItFits: string
+  plot: string
+  imdbId: string
+}
+
+interface MovieSearchResult {
+  title: string
+  year: number
+  imdbId: string
+  runtime: number
+  genres: string[]
+  streamingPlatforms: string[]
+  rating: number
+}
+
+interface MovieReview {
+  movieTitle: string
+  source: string
+  summary: string
+  sentiment: "positive" | "mixed" | "negative"
+}
+
+type AgentStep =
+  | "idle"
+  | "analyzing_preferences"
+  | "searching_movies"
+  | "reading_reviews"
+  | "generating_recommendations"
+  | "complete"
+  | "error"
+
+// Define the state schema
 const AgentStateAnnotation = Annotation.Root({
   userPreferences: Annotation<UserPreferences>,
   searchResults: Annotation<MovieSearchResult[]>({
@@ -37,9 +80,9 @@ type AgentState = typeof AgentStateAnnotation.State
 
 // Initialize the LLM
 function getLLM() {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
+  const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    throw new Error("Anthropic API key not found. Add VITE_ANTHROPIC_API_KEY to your .env file.")
+    throw new Error("ANTHROPIC_API_KEY environment variable not set")
   }
   return new ChatAnthropic({
     model: "claude-sonnet-4-20250514",
@@ -64,25 +107,18 @@ function getResponseText(content: unknown): string {
   return String(content)
 }
 
-// Node: Analyze user preferences and determine search strategy
+// Node: Analyze user preferences
 async function analyzePreferences(_state: AgentState): Promise<Partial<AgentState>> {
-  console.log("[Agent] Analyzing user preferences...")
-  
-  // In a real implementation, this would use the LLM to understand
-  // nuanced preferences and map them to search criteria
   return {
     currentStep: "searching_movies",
   }
 }
 
-// Node: Search for movies across streaming platforms
+// Node: Search for movies
 async function searchMovies(state: AgentState): Promise<Partial<AgentState>> {
-  console.log("[Agent] Searching for movies...")
-  
   const llm = getLLM()
   const { mood, watchingWith, availableTime, recentlyEnjoyed } = state.userPreferences
 
-  // Use LLM to generate movie suggestions based on preferences
   const prompt = `You are a movie recommendation expert. Based on the following preferences, suggest 5-7 movies that would be good candidates:
 
 Mood: ${mood}
@@ -107,9 +143,7 @@ Only return valid JSON, no other text.`
 
   try {
     const response = await llm.invoke(prompt)
-    const content = response.content as string
-    
-    // Extract JSON from response
+    const content = getResponseText(response.content)
     const jsonMatch = content.match(/\[[\s\S]*\]/)
     if (jsonMatch) {
       const searchResults = JSON.parse(jsonMatch[0]) as MovieSearchResult[]
@@ -119,50 +153,17 @@ Only return valid JSON, no other text.`
       }
     }
   } catch (error) {
-    console.error("[Agent] Error searching movies:", error)
+    console.error("Error searching movies:", error)
   }
 
-  // Fallback mock data for development
-  const mockResults: MovieSearchResult[] = [
-    {
-      title: "The Grand Budapest Hotel",
-      year: 2014,
-      imdbId: "tt2278388",
-      runtime: 99,
-      genres: ["Comedy", "Drama"],
-      streamingPlatforms: ["Disney+"],
-      rating: 8.1,
-    },
-    {
-      title: "Knives Out",
-      year: 2019,
-      imdbId: "tt8946378",
-      runtime: 130,
-      genres: ["Comedy", "Crime", "Drama"],
-      streamingPlatforms: ["Prime Video"],
-      rating: 7.9,
-    },
-    {
-      title: "Everything Everywhere All at Once",
-      year: 2022,
-      imdbId: "tt6710474",
-      runtime: 139,
-      genres: ["Action", "Adventure", "Comedy"],
-      streamingPlatforms: ["Paramount+"],
-      rating: 7.8,
-    },
-  ]
-
   return {
-    searchResults: mockResults,
+    searchResults: [],
     currentStep: "reading_reviews",
   }
 }
 
-// Node: Read and analyze reviews for top candidates
+// Node: Read reviews
 async function readReviews(state: AgentState): Promise<Partial<AgentState>> {
-  console.log("[Agent] Reading reviews...")
-
   const llm = getLLM()
   const movieTitles = state.searchResults.map((m) => m.title).join(", ")
 
@@ -185,8 +186,7 @@ Only return valid JSON, no other text.`
 
   try {
     const response = await llm.invoke(prompt)
-    const content = response.content as string
-
+    const content = getResponseText(response.content)
     const jsonMatch = content.match(/\[[\s\S]*\]/)
     if (jsonMatch) {
       const reviews = JSON.parse(jsonMatch[0]) as MovieReview[]
@@ -196,7 +196,7 @@ Only return valid JSON, no other text.`
       }
     }
   } catch (error) {
-    console.error("[Agent] Error reading reviews:", error)
+    console.error("Error reading reviews:", error)
   }
 
   return {
@@ -205,10 +205,8 @@ Only return valid JSON, no other text.`
   }
 }
 
-// Node: Generate final personalized recommendations
+// Node: Generate recommendations
 async function generateRecommendations(state: AgentState): Promise<Partial<AgentState>> {
-  console.log("[Agent] Generating personalized recommendations...")
-
   const llm = getLLM()
   const { mood, watchingWith, availableTime, recentlyEnjoyed } = state.userPreferences
 
@@ -248,21 +246,16 @@ Only return valid JSON, no other text.`
   try {
     const response = await llm.invoke(prompt)
     const content = getResponseText(response.content)
-    console.log("[Agent] Recommendations response length:", content.length)
-
     const jsonMatch = content.match(/\[[\s\S]*\]/)
     if (jsonMatch) {
       const recommendations = JSON.parse(jsonMatch[0]) as MovieRecommendation[]
-      console.log("[Agent] Parsed", recommendations.length, "recommendations")
       return {
         recommendations,
         currentStep: "complete",
       }
-    } else {
-      console.error("[Agent] No JSON array found in response")
     }
   } catch (error) {
-    console.error("[Agent] Error generating recommendations:", error)
+    console.error("Error generating recommendations:", error)
   }
 
   return {
@@ -272,7 +265,7 @@ Only return valid JSON, no other text.`
   }
 }
 
-// Handle errors
+// Error handler
 async function handleError(state: AgentState): Promise<Partial<AgentState>> {
   return {
     currentStep: "error",
@@ -280,7 +273,7 @@ async function handleError(state: AgentState): Promise<Partial<AgentState>> {
   }
 }
 
-// Routing function
+// Routing functions
 function routeAfterAnalysis(state: AgentState): string {
   if (state.error) return "handleError"
   return "searchMovies"
@@ -288,7 +281,7 @@ function routeAfterAnalysis(state: AgentState): string {
 
 function routeAfterSearch(state: AgentState): string {
   if (state.error) return "handleError"
-  if (state.searchResults.length === 0) return "handleError"
+  if (state.searchResults.length === 0) return "generateRecommendations" // Skip to recommendations if no search results
   return "readReviews"
 }
 
@@ -298,7 +291,7 @@ function routeAfterReviews(state: AgentState): string {
 }
 
 // Build the graph
-export function createMovieRecommendationGraph() {
+function createMovieRecommendationGraph() {
   const workflow = new StateGraph(AgentStateAnnotation)
     .addNode("analyzePreferences", analyzePreferences)
     .addNode("searchMovies", searchMovies)
@@ -315,4 +308,67 @@ export function createMovieRecommendationGraph() {
   return workflow.compile()
 }
 
-export type { AgentState }
+// Netlify function handler
+export const handler: Handler = async (event) => {
+  // Handle CORS
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  }
+
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers, body: "" }
+  }
+
+  if (event.httpMethod !== "POST") {
+    return {
+      statusCode: 405,
+      headers,
+      body: JSON.stringify({ error: "Method not allowed" }),
+    }
+  }
+
+  try {
+    const preferences = JSON.parse(event.body || "{}") as UserPreferences
+
+    if (!preferences.mood || !preferences.watchingWith || !preferences.availableTime) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: "Missing required preferences" }),
+      }
+    }
+
+    const graph = createMovieRecommendationGraph()
+
+    const initialState = {
+      userPreferences: preferences,
+      searchResults: [],
+      reviews: [],
+      recommendations: [],
+      currentStep: "analyzing_preferences" as AgentStep,
+    }
+
+    const result = await graph.invoke(initialState)
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        recommendations: result.recommendations,
+        error: result.error,
+      }),
+    }
+  } catch (error) {
+    console.error("Function error:", error)
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({
+        error: error instanceof Error ? error.message : "Internal server error",
+      }),
+    }
+  }
+}

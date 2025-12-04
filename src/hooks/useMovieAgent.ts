@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react"
-import { createMovieRecommendationGraph, type AgentState } from "@/agent/graph"
 import type { UserPreferences, MovieRecommendation, AgentStep } from "@/types"
 
 interface UseMovieAgentReturn {
@@ -24,34 +23,44 @@ export function useMovieAgent(): UseMovieAgentReturn {
     setCurrentStep("analyzing_preferences")
 
     try {
-      const graph = createMovieRecommendationGraph()
+      // Simulate progress through steps while the API call is made
+      const progressSteps: AgentStep[] = [
+        "searching_movies",
+        "reading_reviews",
+        "generating_recommendations",
+      ]
 
-      const initialState: Partial<AgentState> = {
-        userPreferences: preferences,
-        searchResults: [],
-        reviews: [],
-        recommendations: [],
-        currentStep: "analyzing_preferences",
-      }
+      let stepIndex = 0
+      const progressInterval = setInterval(() => {
+        if (stepIndex < progressSteps.length) {
+          setCurrentStep(progressSteps[stepIndex])
+          stepIndex++
+        }
+      }, 2000)
 
-      // Stream the state updates
-      const stream = await graph.stream(initialState, {
-        streamMode: "values",
+      const response = await fetch("/.netlify/functions/recommend", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(preferences),
       })
 
-      let finalState: AgentState | null = null
+      clearInterval(progressInterval)
 
-      for await (const state of stream) {
-        finalState = state as AgentState
-        setCurrentStep(finalState.currentStep)
-
-        if (finalState.error) {
-          setError(finalState.error)
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP error ${response.status}`)
       }
 
-      if (finalState?.recommendations) {
-        setRecommendations(finalState.recommendations)
+      const data = await response.json()
+
+      if (data.error) {
+        setError(data.error)
+        setCurrentStep("error")
+      } else {
+        setRecommendations(data.recommendations || [])
+        setCurrentStep("complete")
       }
     } catch (err) {
       console.error("Agent error:", err)
