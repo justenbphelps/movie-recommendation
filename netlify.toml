@@ -6,15 +6,8 @@
 [functions]
   node_bundler = "esbuild"
 
-# Redirect all routes to index.html for SPA
+# SPA fallback - redirect all routes to index.html
 [[redirects]]
   from = "/*"
   to = "/index.html"
-  status = 200
-  conditions = {Role = ["admin", "visitor"]}
-
-# But not for API calls
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
   status = 200
